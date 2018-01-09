@@ -103,7 +103,7 @@ def getQuotes(symbols):
     if type(symbols) == type('str'):
         symbols = [symbols]
     content = json.loads(request(symbols))
-    return content;
+    return content#replaceKeys(content);
 
 def getNews(symbol):
     return requestNews(symbol);
