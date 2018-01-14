@@ -32,17 +32,63 @@ def get_stock_symbols_frm_m_cntrl_url(m_cntrl_url):
     soup = BeautifulSoup(markup, "lxml")
     """Get the BSE and NSE symbols for now"""
     bse_nse_code = soup.find_all(
+		"div",
+		attrs={"class":"FL gry10"}
+	)
+    if len(bse_nse_code) == 0:
+        return None
+    not_listed = soup.find_all(
         "div",
-        attrs={"class":"FL gry10"}
+        attrs={"class":"gL_18 bseNot minHt110"}
     )
-    if len(bse_nse_code) > 0:
-        __t = bse_nse_code[0]
-        bse_code = __t.contents[0]
-        nse_code = __t.contents[2]
-        return bse_code, nse_code
+    if len(not_listed) == 2:
+        print "Stock is not listed on exchange"
+        return None
+    bse_volume = soup.find_all(
+        "span",
+        attrs = {"id":"bse_volume"}
+    )
+    if len(bse_volume) > 0:
+        if len(bse_volume[0].text) < 4:
+            return None
+
+    nse_volume = soup.find_all(
+        "div",
+        attrs = {"id" : "nse_volume"}
+    )
+    if len(nse_volume) > 0:
+        if len(nse_volume[0].text) < 4:
+            return None
+    return "Yes!!"
+    # markup = session.get(url=symbol_url).text
+    # _soup = BeautifulSoup(markup, "lxml")
+    # is_listed_on_exchange = _soup.find_all(
+    #     "div",
+    #     attrs={"class": "gL_18 bseNot minHt110"}
+    # )
+    # if len(is_listed_on_exchange) == 2:
+    #     print "Stock is not listed on exchange"
+    #     return None
+    # bse_nse_code = _soup.find_all(
+    #     "div",
+    #     attrs={"class": "FL gry10"}
+    # )
+    # if len(bse_nse_code) > 0:
+    #     __t = bse_nse_code[0]
+    #     bse_code = __t.contents[0]
+    #     nse_code = __t.contents[2]
+    # else:
+    #     return None
+    # if len(bse_nse_code) > 0:
+    # __t = bse_nse_code[0]
+    # bse_code = __t.contents[0]
+    # nse_code = __t.contents[2]
+    # return bse_code, nse_code
 
 
-def get_stock_financials(m_cntrl_url):
+def get_stock_financials(m_cntrl_url, symbol_url):
+    if get_stock_symbols_frm_m_cntrl_url(symbol_url) == None:
+        return None
     print "Hitting URL : "+m_cntrl_url
     session = requests.Session()
     session.max_redirects = 60
@@ -66,10 +112,13 @@ def get_stock_financials(m_cntrl_url):
     )
     __columns = []
     __i=0
+    if len(columns) == 0:
+        return None
     for c in columns:
         if __i < len(columns):
-            __columns.append(c.text)
+            __columns.append(str(c.text))
             __i+=1
+    __columns.sort()
     __ratio_type = None
     for t in table_data:
         ratio_type = t.find_all(
@@ -87,9 +136,38 @@ def get_stock_financials(m_cntrl_url):
             continue
         ratios[str(__ratio_type)][str(keys[0].text)] = {}
         j=1
+        debt_zero = {}
         for i in range(1, len(keys)):
             if j < len(__columns):
                 ratios[str(__ratio_type)][str(keys[0].text)][str(__columns[j])] = str(keys[i].text)
+                if str(__ratio_type) == "Profitability Ratios":
+                    if str(keys[0].text) == "Total Debt/Equity (X)":
+                        try:
+                            if float(ratios[str(__ratio_type)][str(keys[0].text)][str(__columns[j])]) < 1.00:
+                                print "Debt less than 1 : "+ m_cntrl_url + " for the year : "+str(__columns[j])
+                                debt_zero[m_cntrl_url] = m_cntrl_url
+                        except KeyError as keyError:
+                            import traceback
+                            traceback.print_stack()
+                    if str(keys[0].text) == "Return on Networth/Equity (%)":
+                        if float(ratios[str(__ratio_type)][str(keys[0].text)][str(__columns[j])]) >= 15.00:
+                            print "ROE is more than 15 : " + m_cntrl_url
+                        else:
+                            if m_cntrl_url in debt_zero:
+                                del debt_zero[m_cntrl_url]
+                    if str(keys[0].text) == "Return on Capital Employed (%)":
+                        if float(ratios[str(__ratio_type)][str(keys[0].text)][str(__columns[j])]) >= 15.00:
+                            print "ROCE is more than 15 : " + m_cntrl_url
+                        else:
+                            if m_cntrl_url in debt_zero:
+                                del debt_zero[m_cntrl_url]
+                    if str(keys[0].text) == "PBDIT Margin (%)":
+                        if float(ratios[str(__ratio_type)][str(keys[0].text)][str(__columns[j])]) >= 15.00:
+                            print "PBDIT Margin (%) is more than 15 : " + m_cntrl_url
+                        else:
+                            if m_cntrl_url in debt_zero:
+                                del debt_zero[m_cntrl_url]
+
                 j+=1
     return ratios
 
@@ -101,6 +179,7 @@ if __name__ == '__main__':
                                  dom_element = ['table','td','a'], attributes=['href'])
         urls.extend(__urls)
     for u in urls:
-        print (get_stock_symbols_frm_m_cntrl_url(u))
+        # print (get_stock_symbols_frm_m_cntrl_url(u))
         array = u.split("/")
-        print get_stock_financials("http://www.moneycontrol.com/financials"+"/"+array[-2]+"/ratiosVI/"+array[-1]+"#"+array[-1])
+        print get_stock_financials("http://www.moneycontrol.com/financials"+"/"+array[-2]+
+                                   "/consolidated-ratiosVI/"+array[-1]+"#"+array[-1], u)
